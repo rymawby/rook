@@ -1,0 +1,56 @@
+name: Update Homebrew tap
+
+# Keeps rymawby/homebrew-rook's Formula/rook.rb pointed at the latest
+# published release, so `brew install rymawby/rook/rook` (no --HEAD)
+# always tracks the newest tagged version instead of lagging behind main.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-tap:
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute release tarball URL and sha256
+        id: release
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          url="https://github.com/${{ github.repository }}/archive/refs/tags/${tag}.tar.gz"
+          curl -sfL "$url" -o release.tar.gz
+          sha256="$(sha256sum release.tar.gz | cut -d' ' -f1)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${sha256}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-rook
+        uses: actions/checkout@v4
+        with:
+          repository: rymawby/homebrew-rook
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update Formula/rook.rb
+        run: |
+          set -euo pipefail
+          formula="tap/Formula/rook.rb"
+          sed -i -E "s#^(  url \").*(\")\$#\1${{ steps.release.outputs.url }}\2#" "$formula"
+          sed -i -E "s#^(  sha256 \").*(\")\$#\1${{ steps.release.outputs.sha256 }}\2#" "$formula"
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Formula already up to date, nothing to commit."
+            exit 0
+          fi
+          git add Formula/rook.rb
+          git commit -m "rook ${{ steps.release.outputs.tag }}"
+          git push
