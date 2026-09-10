@@ -168,6 +168,13 @@ func (c *Config) applyDefaults() {
 	if c.Roles.Subagent.Process == "" {
 		c.Roles.Subagent.Process = ProcessOneShot
 	}
+	// roles.specEditor is optional (§8): an omitted specEditor falls back to the
+	// orchestrator's own backend+model for the "describe the change" edit flow (§10).
+	// Direct spec-file edits and the file-watcher pickup never depend on this role.
+	if c.Roles.SpecEditor.Backend == "" {
+		c.Roles.SpecEditor.Backend = c.Roles.Orchestrator.Backend
+		c.Roles.SpecEditor.Model = c.Roles.Orchestrator.Model
+	}
 	if c.Permissions.Orchestrator == "" {
 		c.Permissions.Orchestrator = PermissionPrompt
 	}
@@ -190,9 +197,8 @@ func (c *Config) Validate() error {
 	if c.Roles.Subagent.Backend == "" {
 		return fmt.Errorf("roles.subagent.backend: must not be empty")
 	}
-	if c.Roles.SpecEditor.Backend == "" {
-		return fmt.Errorf("roles.specEditor.backend: must not be empty")
-	}
+	// roles.specEditor is optional (§8) and defaulted from the orchestrator in
+	// applyDefaults; it is deliberately not required here.
 	if c.Roles.Subagent.Concurrency < 1 {
 		return fmt.Errorf("roles.subagent.concurrency: must be >= 1")
 	}

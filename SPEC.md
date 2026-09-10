@@ -203,6 +203,7 @@ A `rook.json` (with a `$schema` pointer, JSON Schema convention) at the project 
 
 Notes:
 - `roles.*.backend` selects an adapter; `model` is passed through verbatim to that backend (so it must already be configured in that backend's own config, e.g. `crushrc`/provider env vars — Rook does not re-implement provider auth).
+- `roles.orchestrator` and `roles.subagent` are required. `roles.specEditor` is optional: if omitted, Rook falls back to the orchestrator's own backend+model for the "describe the change" natural-language edit flow (§10). Direct edits to the spec file and the file-watcher pickup work either way, with or without `specEditor` configured — it only backs that one optional flow.
 - `roles.*.process`: `"persistent"` keeps that role's backend server process warm across calls (connection reuse only, per §6); `"one-shot"` spawns fresh per call. Every call remains logically stateless regardless of this setting — it's a latency/cost knob, not a memory knob.
 - `targetDir` must be a git repository; if it isn't, Rook runs `git init` plus an initial empty commit automatically on first run.
 - `loop.maxIterations: 0` means unbounded (run until the orchestrator declares the spec satisfied or the user stops it).

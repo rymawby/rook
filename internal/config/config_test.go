@@ -41,6 +41,31 @@ func TestLoadAppliesDefaultsAndValidates(t *testing.T) {
 	}
 }
 
+func TestSpecEditorDefaultsToOrchestrator(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rook.json")
+	noSpecEditor := `{
+  "roles": {
+    "orchestrator": {"backend": "codex", "model": "gpt-5.6-sol"},
+    "subagent": {"backend": "opencode", "model": "deepseek/deepseek-v4-flash"}
+  }
+}`
+	if err := os.WriteFile(path, []byte(noSpecEditor), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Roles.SpecEditor.Backend != "codex" {
+		t.Errorf("expected specEditor.backend to default to orchestrator's %q, got %q", "codex", cfg.Roles.SpecEditor.Backend)
+	}
+	if cfg.Roles.SpecEditor.Model != "gpt-5.6-sol" {
+		t.Errorf("expected specEditor.model to default to orchestrator's %q, got %q", "gpt-5.6-sol", cfg.Roles.SpecEditor.Model)
+	}
+}
+
 func TestValidateRejectsBadValues(t *testing.T) {
 	cfg := Default()
 	cfg.Loop.AcceptanceCriteria = "bogus"
