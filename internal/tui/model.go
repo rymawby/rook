@@ -7,10 +7,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/rymawby/rook/internal/config"
 	"github.com/rymawby/rook/internal/loopengine"
+)
+
+// headerLines/footerLines are how much vertical space the tab bar and
+// status bar (§11) reserve outside each tab's own viewport.
+const (
+	headerLines = 2 // tab bar + blank line
+	footerLines = 2 // blank line + status bar
 )
 
 type tab int
@@ -79,7 +87,10 @@ type model struct {
 	loopStatus string // "running" | "stopped: <reason>"
 	iterN      int
 
-	selectedIdx int // selection within the active tab's list
+	// viewports holds one independently-scrollable Bubbles viewport per tab
+	// (§11.1), so each tab keeps its own scroll position across tab switches.
+	viewports [tabCount]viewport.Model
+	ready     bool // sized once the first tea.WindowSizeMsg arrives
 
 	width, height int
 
@@ -142,13 +153,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		vpWidth := msg.Width
+		vpHeight := msg.Height - headerLines - footerLines
+		if vpHeight < 0 {
+			vpHeight = 0
+		}
+		if !m.ready {
+			for t := tab(0); t < tabCount; t++ {
+				m.viewports[t] = viewport.New(vpWidth, vpHeight)
+			}
+			m.ready = true
+		} else {
+			for t := tab(0); t < tabCount; t++ {
+				m.viewports[t].Width = vpWidth
+				m.viewports[t].Height = vpHeight
+			}
+		}
+		m.refreshViewports()
 		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewports[m.active], cmd = m.viewports[m.active].Update(msg)
+		return m, cmd
+
 	case engineEventsMsg:
 		m.applyEvent(loopengine.Event(msg))
+		m.refreshViewports()
 		return m, waitForEvent(m.engine.Events())
 
 	case engineDoneMsg:
@@ -220,6 +254,10 @@ func appendIfMissing(s []int, v int) []int {
 	return append(s, v)
 }
 
+// handleKey handles the small set of app-reserved keys (quit, tab
+// switching); everything else is forwarded to the active tab's viewport,
+// which owns scrolling (arrows, j/k, pgup/pgdown, ctrl+u/d, g/G, home/end —
+// §11.1's default Bubbles viewport bindings).
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -232,22 +270,26 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "1":
 		m.active = tabSpec
+		return m, nil
 	case "2":
 		m.active = tabTasks
+		return m, nil
 	case "3":
 		m.active = tabStreams
+		return m, nil
 	case "4":
 		m.active = tabHistory
+		return m, nil
 	case "tab":
 		m.active = (m.active + 1) % tabCount
-	case "up", "k":
-		if m.selectedIdx > 0 {
-			m.selectedIdx--
-		}
-	case "down", "j":
-		m.selectedIdx++
+		return m, nil
+	case "shift+tab":
+		m.active = (m.active - 1 + tabCount) % tabCount
+		return m, nil
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.viewports[m.active], cmd = m.viewports[m.active].Update(msg)
+	return m, cmd
 }
 
 // Run starts the TUI, driving engine to completion (or until the user
@@ -258,7 +300,7 @@ func Run(ctx context.Context, engine *loopengine.Engine, cfg *config.Config) err
 	engineCtx = runCtx
 
 	m := initialModel(cfg, engine, cancel)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

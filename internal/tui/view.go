@@ -27,33 +27,45 @@ var (
 	styleFailed      = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	styleRunning     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	stylePending     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleSelected    = lipgloss.NewStyle().Background(lipgloss.Color("237"))
 )
 
 func (m model) View() string {
 	if m.quitting && m.loopStatus == "" {
 		return "stopping...\n"
 	}
+	if !m.ready {
+		return "starting rook...\n"
+	}
 
 	var b strings.Builder
 	b.WriteString(m.renderTabs())
 	b.WriteString("\n")
-
-	body := ""
-	switch m.active {
-	case tabSpec:
-		body = m.renderSpec()
-	case tabTasks:
-		body = m.renderTasks()
-	case tabStreams:
-		body = m.renderStreams()
-	case tabHistory:
-		body = m.renderHistory()
-	}
-	b.WriteString(body)
+	b.WriteString(m.viewports[m.active].View())
 	b.WriteString("\n")
 	b.WriteString(m.renderStatusBar())
 	return b.String()
+}
+
+// refreshViewports re-renders every tab's body from current model state and
+// feeds it (word-wrapped to that viewport's width, §11) into its viewport,
+// preserving each tab's existing scroll offset. Called whenever content or
+// terminal size changes, never from View, which stays a pure readout.
+func (m *model) refreshViewports() {
+	if !m.ready {
+		return
+	}
+	bodies := [tabCount]string{
+		tabSpec:    m.renderSpec(),
+		tabTasks:   m.renderTasks(),
+		tabStreams: m.renderStreams(),
+		tabHistory: m.renderHistory(),
+	}
+	for t, body := range bodies {
+		if w := m.viewports[t].Width; w > 0 {
+			body = lipgloss.NewStyle().Width(w).Render(body)
+		}
+		m.viewports[t].SetContent(body)
+	}
 }
 
 func (m model) renderTabs() string {
@@ -103,7 +115,7 @@ func (m model) renderTasks() string {
 		b.WriteString("\n")
 		for _, id := range ids {
 			t := m.tasks[id]
-			line := fmt.Sprintf("  %s — %s", t.id, truncate(t.instruction, 80))
+			line := fmt.Sprintf("  %s — %s", t.id, t.instruction)
 			b.WriteString(line)
 			b.WriteString("\n")
 			if len(t.scopeFiles) > 0 {
@@ -136,13 +148,9 @@ func (m model) renderStreams() string {
 		b.WriteString(styleDim.Render("no active subagents"))
 		return b.String()
 	}
-	for i, id := range m.taskIDs {
+	for _, id := range m.taskIDs {
 		t := m.tasks[id]
-		style := lipgloss.NewStyle()
-		if i == m.selectedIdx%len(m.taskIDs) {
-			style = styleSelected
-		}
-		b.WriteString(style.Render(fmt.Sprintf("[%s] %s: %s", t.status, t.id, truncate(t.instruction, 100))))
+		b.WriteString(fmt.Sprintf("[%s] %s: %s", t.status, t.id, t.instruction))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
@@ -165,7 +173,7 @@ func (m model) renderHistory() string {
 		}
 		b.WriteString(fmt.Sprintf("iter %d — %.0f%% — %s\n", n, iv.completionEstimate*100, status))
 		if iv.summary != "" {
-			b.WriteString(styleDim.Render("  " + truncate(iv.summary, 160)))
+			b.WriteString(styleDim.Render("  " + iv.summary))
 			b.WriteString("\n")
 		}
 	}
@@ -173,18 +181,15 @@ func (m model) renderHistory() string {
 }
 
 func (m model) renderStatusBar() string {
+	scroll := ""
+	if vp := m.viewports[m.active]; vp.TotalLineCount() > vp.Height {
+		scroll = fmt.Sprintf("  scroll=%.0f%%", vp.ScrollPercent()*100)
+	}
 	text := fmt.Sprintf(
-		" orchestrator=%s/%s  subagent=%s/%s (x%d)  loop=%s  iter=%d  [1-4 tabs, q quit] ",
+		" orchestrator=%s/%s  subagent=%s/%s (x%d)  loop=%s  iter=%d%s  [1-4 tabs, q quit] ",
 		m.cfg.Roles.Orchestrator.Backend, m.cfg.Roles.Orchestrator.Model,
 		m.cfg.Roles.Subagent.Backend, m.cfg.Roles.Subagent.Model, m.cfg.Roles.Subagent.Concurrency,
-		m.loopStatus, m.iterN,
+		m.loopStatus, m.iterN, scroll,
 	)
 	return styleStatusBar.Render(text)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
 }

@@ -251,15 +251,23 @@ The spec must be editable while a loop is running, without corrupting an in-flig
 
 ## 11. TUI
 
-Views (tab or pane based, built with Bubble Tea + Lip Gloss):
+Component stack: [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the Elm-architecture event loop, [Lip Gloss](https://github.com/charmbracelet/lipgloss) for styling, and [Bubbles](https://github.com/charmbracelet/bubbles)' `viewport` for scrolling — every tab's content can grow past one screen (a long spec, a busy task board, a deep iteration history), so every tab is a `viewport.Model`, not a raw string dump.
 
-- **Spec view**: rendered markdown of the current spec revision; edit mode drops into a text editor or a "describe the change" prompt routed to the spec editor model.
-- **Task board**: kanban-style columns (`pending`/`running`/`done`/`failed`/`blocked`) for the current iteration's tasks; selecting a task shows its instruction, scope, and live/rendered output.
-- **Agent streams**: live/tailable output per running subagent (and the orchestrator's own reasoning/assessment output), one pane per active task, scrollable history for completed ones.
+Four tabs, one per view:
+
+- **Spec view**: the current spec revision's raw markdown, word-wrapped to the terminal width. Edit mode drops into a text editor or a "describe the change" prompt routed to the spec editor model. (Markdown-*rendered* display, e.g. via `glamour`, is a candidate future enhancement, not v1 — v1 shows wrapped source text.)
+- **Task board**: kanban-style columns (`pending`/`running`/`done`/`failed`/`blocked`) for the current iteration's tasks, each task's instruction and scope wrapped to width rather than clipped.
+- **Agent streams**: live status line per active task (and the orchestrator's own reasoning/assessment output); full transcripts are on disk (§12) for anything too long to usefully inline.
 - **Iteration history**: chronological list of past iterations with their verdicts, completion estimate over time (so the user can see the trend line toward "done"), and links to the spec revision each was evaluated against.
-- **Config/status bar**: current orchestrator/subagent backend+model, concurrency, loop status (`running`/`paused`/`stopped`), iteration counter.
+- **Config/status bar**: current orchestrator/subagent backend+model, concurrency, loop status (`running`/`paused`/`stopped`), iteration counter, always visible (outside any tab's scrollable area).
 
-Keybindings are Rook's own; a dedicated model/role picker (analogous to a provider/model switcher) is worth carrying over as a UX pattern regardless of which backend CLI it targets.
+### 11.1 Navigation & scrolling
+
+- Each tab owns its **own** `viewport.Model`, so scroll position is preserved independently per tab — switching to Task board and back to Spec returns you to where you were reading, not the top.
+- Reserved keys, handled by the app regardless of active tab: `1`-`4` jump directly to a tab, `tab`/`shift+tab` cycle forward/back, `q`/`ctrl+c` requests a graceful stop (finish the current iteration, then quit; a second press quits immediately).
+- Every other key/mouse event is forwarded to the active tab's viewport, which gets Bubbles' default scrolling behavior for free: arrow keys, `j`/`k`, `pgup`/`pgdown`, `ctrl+u`/`ctrl+d` (half-page), `g`/`G` (top/bottom), `home`/`end`, and mouse wheel.
+- Viewports resize live on terminal resize (`tea.WindowSizeMsg`), and content is re-wrapped to the new width rather than clipped.
+- When a tab's content is taller than the viewport, its scroll position (e.g. as a percentage) is surfaced in the status bar, so it's visually obvious the tab is scrollable and where you are in it.
 
 ## 12. Persistence & resumability
 

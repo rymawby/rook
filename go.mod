@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 )
