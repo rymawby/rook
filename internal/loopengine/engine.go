@@ -80,10 +80,10 @@ func (e *Engine) Bootstrap(ctx context.Context) error {
 	if err := e.store.Init(); err != nil {
 		return err
 	}
-	if !gitutil.IsRepo(ctx, e.targetDir) {
-		if err := gitutil.Init(ctx, e.targetDir); err != nil {
-			return fmt.Errorf("git init %s: %w", e.targetDir, err)
-		}
+	// gitutil.Init is idempotent: it also covers a directory that's already a
+	// git repo but has no commits yet, which otherwise leaves HEAD unborn.
+	if err := gitutil.Init(ctx, e.targetDir); err != nil {
+		return fmt.Errorf("git init %s: %w", e.targetDir, err)
 	}
 	return nil
 }

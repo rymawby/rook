@@ -42,11 +42,18 @@ func IsRepo(ctx context.Context, dir string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
-// Init creates a new git repository at dir with an initial empty commit,
-// so branching/worktrees have something to fork from (§4, §8).
+// Init ensures dir is a git repository with at least one commit, so
+// branching/worktrees and HEAD-relative operations always have something to
+// fork from and resolve against (§4, §8). Safe to call on a directory that's
+// already a git repo: `git init` is skipped, and the empty commit is only
+// added if HEAD doesn't already resolve — covering both "not a repo yet" and
+// "a repo with zero commits" (e.g. the user ran `git init` themselves before
+// pointing Rook at it), which otherwise leaves HEAD unborn.
 func Init(ctx context.Context, dir string) error {
-	if _, err := run(ctx, dir, "init"); err != nil {
-		return err
+	if !IsRepo(ctx, dir) {
+		if _, err := run(ctx, dir, "init"); err != nil {
+			return err
+		}
 	}
 	if _, err := run(ctx, dir, "config", "user.email", "rook@localhost"); err != nil {
 		return err
@@ -54,8 +61,10 @@ func Init(ctx context.Context, dir string) error {
 	if _, err := run(ctx, dir, "config", "user.name", "Rook"); err != nil {
 		return err
 	}
-	if _, err := run(ctx, dir, "commit", "--allow-empty", "-m", "rook: initial commit"); err != nil {
-		return err
+	if _, err := run(ctx, dir, "rev-parse", "--verify", "HEAD"); err != nil {
+		if _, err := run(ctx, dir, "commit", "--allow-empty", "-m", "rook: initial commit"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
